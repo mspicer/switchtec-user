@@ -696,33 +696,6 @@ static ssize_t resource_size(struct switchtec_linux *ldev, const char *fname)
 	return stat.st_size;
 }
 
-static int mmap_resource(struct switchtec_linux *ldev, const char *fname,
-			 void *addr, size_t offset, size_t size, int writeable)
-{
-	char respath[PATH_MAX];
-	void *map;
-	int fd, ret = 0;
-
-	ret = dev_to_sysfs_path(ldev, fname, respath,
-				sizeof(respath));
-	if (ret) {
-		errno = ret;
-		return -1;
-	}
-
-	fd = open(respath, writeable ? O_RDWR : O_RDONLY);
-	if (fd < 0)
-		return -1;
-
-	map = mmap(addr, size, (writeable ? PROT_WRITE : 0) | PROT_READ,
-		   MAP_SHARED | MAP_FIXED, fd, offset);
-	if (map == MAP_FAILED)
-		ret = -1;
-
-	close(fd);
-	return ret;
-}
-
 /*
  * GAS map maps the hardware registers into user memory space.
  * Needless to say, this can be very dangerous and should only
