@@ -743,30 +743,15 @@ static gasptr_t linux_gas_map(struct switchtec_dev *dev, int writeable,
 		return SWITCHTEC_MAP_FAILED;
 
 	/*
-	 * Reserve virtual address space for the entire GAS mapping.
+	 * Use the /dev/switchtec device directly for mmap.
+	 * On kernel 6.12+, CONFIG_IO_STRICT_DEVMEM prevents mmap of
+	 * PCI resource files when a driver has claimed the region.
+	 * The switchtec driver now provides an mmap handler for GAS access.
 	 */
-	map = mmap(NULL, msize, PROT_NONE,
-		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	map = mmap(NULL, msize, (writeable ? PROT_WRITE : 0) | PROT_READ,
+		   MAP_SHARED, ldev->fd, 0);
 	if (map == MAP_FAILED)
 		return SWITCHTEC_MAP_FAILED;
-
-	ret = mmap_resource(ldev, "device/resource0_wc", map, 0,
-			    SWITCHTEC_GAS_TOP_CFG_OFFSET, writeable);
-	if (ret) {
-		ret = mmap_resource(ldev, "device/resource0", map, 0,
-				    SWITCHTEC_GAS_TOP_CFG_OFFSET,
-				    writeable);
-		if (ret)
-			goto unmap_and_exit;
-	}
-
-	ret = mmap_resource(ldev, "device/resource0",
-			    map + SWITCHTEC_GAS_TOP_CFG_OFFSET,
-			    SWITCHTEC_GAS_TOP_CFG_OFFSET,
-			    msize - SWITCHTEC_GAS_TOP_CFG_OFFSET,
-			    writeable);
-	if (ret)
-		goto unmap_and_exit;
 
 	if (map_size)
 		*map_size = msize;
@@ -777,13 +762,10 @@ static gasptr_t linux_gas_map(struct switchtec_dev *dev, int writeable,
 	ret = gasop_access_check(dev);
 	if (ret) {
 		errno = ENODEV;
-		goto unmap_and_exit;
+		munmap(map, msize);
+		return SWITCHTEC_MAP_FAILED;
 	}
 	return (gasptr_t __force)map;
-
-unmap_and_exit:
-	munmap(map, msize);
-	return SWITCHTEC_MAP_FAILED;
 }
 
 static void linux_gas_unmap(struct switchtec_dev *dev, gasptr_t map)
